@@ -20,6 +20,11 @@ export interface BirthInfo {
     day: number;
     clockHour: number;
     clockMinute: number;
+    /** Versioned provenance for new forms; absent on historical charts. */
+    conversionVersion?: 1;
+    calendar?: 'solar' | 'lunar';
+    unknownTime?: boolean;
+    lunarDate?: { year: number; month: number; day: number; isLeapMonth: boolean };
   };
 }
 

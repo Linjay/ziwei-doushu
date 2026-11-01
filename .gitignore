@@ -6,4 +6,14 @@ node_modules/
 dist/
 *.tsbuildinfo
 .DS_Store
-node_modules
+.codex-local/
+/data/
+/codex/
+/runtime.env
+*.sqlite
+*.sqlite-*
+/knowledge/
+
+# Local acceptance evidence and deployment inventories; keep upstream docs/assets.
+/docs/releases/
+/docs/reviews/

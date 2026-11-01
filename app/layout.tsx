@@ -1,15 +1,19 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import './account.css';
+import './mobile.css';
 import { ThemeProvider } from '@/components/ThemeProvider';
-import { Analytics } from '@vercel/analytics/next';
-import { SpeedInsights } from '@vercel/speed-insights/next';
 import { SITE_URL } from '@/lib/site';
+import AccountProvider from '@/components/AccountProvider';
+
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', interactiveWidget: 'resizes-content' };
 
 export const metadata: Metadata = {
   title: '紫微命盘 · 倪海厦正宗紫微斗数',
   description: '基于倪海厦正宗紫微斗数体系，AI深度解读您的命盘格局、大限流年、感情事业财富健康全方位解析',
   keywords: '紫微斗数, 倪海厦, 紫微斗数全集, 紫微斗数全书, 骨髓赋, 命盘, 命理, 14主星, 12宫位',
   metadataBase: new URL(SITE_URL),
+  robots: { index: false, follow: false },
   alternates: {
     canonical: '/',
   },
@@ -44,10 +48,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen">
         <ThemeProvider>
-          {children}
+          <AccountProvider>{children}</AccountProvider>
         </ThemeProvider>
-        <Analytics />
-        <SpeedInsights />
       </body>
     </html>
   );

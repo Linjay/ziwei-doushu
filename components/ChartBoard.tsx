@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { ZiweiChart, Palace, Star } from '@/lib/ziwei/types';
 import { BRANCHES, STEMS } from '@/lib/ziwei/constants';
 import PalaceCell from './PalaceCell';
+import BirthCalculationSummary from './BirthCalculationSummary';
 import TimeNav, { type TimeView, getYearStemIndex, buildSiHuaOverlay } from './TimeNav';
 
 interface ChartBoardProps {
@@ -89,6 +90,7 @@ export default function ChartBoard({ chart, onStarSelect, onPalaceSelect, onSiHu
 
   return (
     <div className="w-full select-none">
+      <BirthCalculationSummary birth={chart.birthInfo} />
       {/* 时间导航轴 */}
       <TimeNav
         chart={chart}

@@ -70,6 +70,8 @@ export default function PalaceCell({
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.35, delay, ease: 'easeOut' }}
       onClick={onClick}
+      role="button" tabIndex={0} aria-label={`查看${palace.name}详情`}
+      onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick?.(); } }}
       className="relative flex flex-col p-1.5 cursor-pointer transition-all duration-200 h-full"
       style={{
         minHeight: '90px',

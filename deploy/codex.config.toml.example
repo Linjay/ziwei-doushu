@@ -1,0 +1,17 @@
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
+cli_auth_credentials_store = "file"
+approval_policy = "never"
+sandbox_mode = "read-only"
+project_doc_max_bytes = 0
+web_search = "disabled"
+mcp_servers = {}
+
+[features]
+apps = false
+plugins = false
+shell_tool = false
+unified_exec = false
+shell_snapshot = false
+memories = false
+skill_mcp_dependency_install = false

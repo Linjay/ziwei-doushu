@@ -1,0 +1,101 @@
+.app-header { position:sticky; top:0; z-index:40; display:flex; align-items:center; gap:28px; min-height:72px; padding:12px max(24px, calc((100vw - 1280px)/2)); border-bottom:1px solid var(--bdr); background:var(--bg-0); }
+.app-brand { display:flex; align-items:center; gap:9px; white-space:nowrap; color:var(--tx-0); font-weight:700; font-size:18px; text-decoration:none; }
+.app-brand span { color:var(--ac); }
+.app-nav { display:flex; gap:8px; align-items:center; }
+.app-nav a { text-decoration:none; color:var(--tx-2); padding:9px 14px; border-radius:10px; white-space:nowrap; font-size:14px; }
+.app-nav a[aria-current=page] { color:var(--ac); background:var(--ac-bg); }
+.app-session { margin-left:auto; display:flex; align-items:center; gap:12px; min-width:0; font-size:13px; }
+.session-name { max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tx-2); text-decoration:none; }
+.small-button { display:inline-flex; justify-content:center; align-items:center; gap:6px; min-height:40px; padding:8px 14px; border:1px solid var(--bdr-med); border-radius:9px; background:var(--bg-1); color:var(--tx-1); text-decoration:none; font-size:13px; cursor:pointer; }
+.text-button { padding:8px 4px; color:var(--tx-2); background:transparent; border:0; cursor:pointer; font:inherit; font-size:13px; }
+.text-button:hover,.small-button:hover { color:var(--ac); }
+button:disabled { cursor:wait; opacity:.55; }
+.app-footer { padding:32px 16px calc(32px + env(safe-area-inset-bottom)); text-align:center; color:var(--tx-3); font-size:12px; }
+.account-shell { max-width:1120px; margin:0 auto; padding:44px 24px; min-height:calc(100dvh - 180px); }
+.account-card { border:1px solid var(--bdr-med); background:var(--bg-card); border-radius:18px; padding:26px; min-width:0; }
+.account-card h2 { color:var(--tx-0); font-size:19px; font-weight:600; margin-bottom:10px; }
+.page-heading { display:flex; align-items:center; justify-content:space-between; gap:24px; margin-bottom:26px; }
+.page-heading h1,.auth-intro h1 { font-size:clamp(26px,4vw,38px); font-weight:700; color:var(--tx-0); letter-spacing:-.03em; margin:8px 0; }
+.eyebrow { color:var(--ac); font:600 10px var(--font-mono); letter-spacing:.18em; }
+.muted { color:var(--tx-2); font-size:13px; line-height:1.8; }
+.account-form { display:grid; gap:18px; margin-top:20px; }
+.account-form label,.history-search { display:flex; flex-direction:column; gap:8px; font-size:13px; color:var(--tx-2); min-width:0; }
+.account-form input,.account-form select,.account-form textarea,.history-search input,.history-search select,.rename-form input { width:100%; min-width:0; border:1px solid var(--bdr-med); border-radius:9px; color:var(--tx-0); background:var(--bg-0); padding:12px; font:inherit; font-size:15px; outline:none; color-scheme:light dark; }
+.account-form input:focus,.account-form select:focus,.account-form textarea:focus,.history-search input:focus,.history-search select:focus,.rename-form input:focus { border-color:var(--ac); box-shadow:0 0 0 3px var(--ac-bg); }
+.account-form input::placeholder,.account-form textarea::placeholder { color:var(--tx-3); }
+.form-submit { width:100%; justify-content:center; border-radius:10px; min-height:46px; }
+.form-columns { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.form-error { color:#ed8b85; font-size:13px; line-height:1.6; }
+.form-success { color:#6bb58d; font-size:13px; }
+.form-note { margin-top:22px; font-size:12px; }
+.app-message { max-width:1080px; padding:12px 16px; margin:12px auto; color:var(--ac); font-size:13px; background:var(--ac-bg); border-radius:8px; }
+.auth-shell { display:grid; grid-template-columns:1fr 420px; align-items:center; gap:64px; max-width:1060px; padding-top:64px; padding-bottom:64px; }
+.auth-intro p { max-width:390px; color:var(--tx-2); line-height:1.9; margin-top:16px; }
+.auth-card { padding:30px; }
+.auth-card h2 { margin-top:26px; font-size:23px; }
+.segmented { display:flex; padding:4px; gap:4px; border:1px solid var(--bdr); border-radius:12px; background:var(--bg-0); }
+.segmented button { flex:1; border:0; padding:10px; border-radius:8px; background:transparent; color:var(--tx-2); font-size:14px; cursor:pointer; }
+.segmented button[aria-pressed=true] { background:var(--ac-bg); color:var(--ac); font-weight:600; }
+.profile-layout { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:22px; align-items:start; }
+.account-stats { display:flex; align-items:center; gap:40px; border:1px solid var(--bdr); background:var(--bg-1); border-radius:14px; padding:24px; margin-bottom:24px; }
+.account-stats div { display:flex; flex-direction:column; gap:4px; }
+.account-stats strong { font-size:30px; color:var(--ac); line-height:1.2; }
+.account-stats span,.account-stats a { color:var(--tx-2); font-size:12px; }
+.account-stats a { margin-left:auto; text-decoration:none; }
+.history-search { margin:24px 0; }
+.record-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.record-card { display:flex; flex-direction:column; gap:12px; }
+.record-card h2 { font-size:17px; margin:0; overflow-wrap:anywhere; }
+.record-topline { display:flex; gap:12px; justify-content:space-between; align-items:center; font-size:11px; color:var(--tx-3); }
+.record-badge { color:var(--ac); border-radius:6px; background:var(--ac-bg); padding:4px 8px; }
+.record-excerpt { font-size:13px; color:var(--tx-2); line-height:1.8; flex:1; overflow-wrap:anywhere; }
+.record-actions { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:4px; }
+.rename-form { display:flex; gap:8px; flex-wrap:wrap; }
+.rename-form input { flex-basis:100%; }
+.danger { color:#e4938e; }
+.delete-confirm { border-top:1px solid var(--bdr); padding-top:14px; font-size:12px; }
+.delete-confirm p { margin-bottom:10px; }
+.delete-confirm button { margin-right:12px; }
+.empty-state { text-align:center; padding:48px 24px; }
+.empty-state a { margin-top:22px; }
+.chart-shell { margin:0 auto; padding:28px 20px; min-height:calc(100dvh - 180px); }
+.chart-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,380px); gap:20px; margin-top:16px; align-items:start; }
+.chart-mobile-panel { min-width:0; overflow-wrap:anywhere; }
+.mobile-chart-tabs { display:none; }
+.history-toolbar button { min-height:40px; }
+@media(max-width:960px) {
+  .auth-shell { gap:30px; grid-template-columns:minmax(0,1fr) minmax(0,400px); }
+  .chart-layout { grid-template-columns:1fr; }
+  .profile-layout { grid-template-columns:1fr; }
+}
+@media(max-width:640px) {
+  .app-header { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 10px; padding:10px 14px 8px; }
+  .app-brand { font-size:16px; }
+  .app-nav { grid-column:1/-1; grid-row:2; justify-content:space-between; gap:6px; }
+  .app-nav a { text-align:center; flex:1; min-height:42px; padding:10px 8px; }
+  .app-session { grid-column:2; grid-row:1; gap:8px; }
+  .session-name { max-width:90px; font-size:12px; }
+  .app-session .small-button { min-height:34px; padding:6px 10px; }
+  .account-shell { padding:26px 14px; }
+  .account-card { padding:20px 16px; border-radius:14px; }
+  .auth-shell { display:flex; flex-direction:column; align-items:stretch; gap:26px; max-width:500px; }
+  .auth-intro h1 { font-size:27px; }
+  .auth-intro p { margin-top:10px; font-size:13px; }
+  .account-form input,.account-form select,.account-form textarea,.history-search input,.rename-form input { font-size:16px; min-height:46px; }
+  .account-form { gap:16px; }
+  .page-heading { align-items:flex-start; gap:12px; flex-wrap:wrap; }
+  .page-heading .btn-primary { padding:10px 16px; font-size:13px; }
+  .account-stats { gap:24px; padding:18px 16px; flex-wrap:wrap; }
+  .account-stats strong { font-size:27px; }
+  .account-stats a { margin-left:0; flex-basis:100%; }
+  .record-grid { grid-template-columns:1fr; }
+  .record-actions .small-button { flex:1; }
+  .chart-shell { padding:18px 10px; }
+  .mobile-chart-tabs { display:flex; margin-top:16px; }
+  .chart-mobile-panel[data-active=false] { display:none; }
+  .history-toolbar { padding:12px !important; }
+  .history-toolbar select { flex-basis:100% !important; font-size:16px; min-height:44px; }
+  .history-toolbar button { min-height:44px; }
+  .app-footer { font-size:11px; padding-top:24px; }
+}
+@media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }

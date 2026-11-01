@@ -4,13 +4,25 @@
 
 ### 算法是公开的传统智慧，不应该被锁在围墙里
 
-[![CI](https://github.com/Renhuai123/ziwei-doushu/actions/workflows/ci.yml/badge.svg)](https://github.com/Renhuai123/ziwei-doushu/actions/workflows/ci.yml)
+[![CI](https://github.com/Linjay/ziwei-doushu/actions/workflows/ci.yml/badge.svg)](https://github.com/Linjay/ziwei-doushu/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](./LICENSE)
 [![Dataset: CC BY 4.0](https://img.shields.io/badge/dataset-CC%20BY%204.0-green.svg)](./DATASET-LICENSE)
 
 **中文** · [English](./README.en.md)
 
 </div>
+
+> **接手与当前进度（2026-11-01）**：本 Fork 保存 NAS 账号版、Codex 流式解读、本地资料检索、农历输入、跨设备历史与 JSON v4、移动端及专业 / 通俗图文阅读实现。当前为带已知问题的开发基线：跨标签页换账号可能串写历史，改密未轮换当前设备凭据，首页浏览器测试受系统动态偏好影响。维护者要求先提交后修复；完整状态、启动命令、数据边界见 [交接入口](./HANDOFF.md)，复现和验收见 [待修复问题](./docs/KNOWN_ISSUES.md)。类型 / 构建和 121 项专项通过，整套浏览器测试目前未通过。下文含上游及早期说明，当前状态以交接为准。
+
+> **此本地版本增加了 Codex CLI 解读接入**：`/api/interpret` 和 `/api/heming` 已实现，可复用部署环境中的 CLI 登录进行命盘解读、追问及双人合盘。下文其他开源边界说明描述的是上游原版；此改造没有获得上游私有断语库。配置和验证方法见第三章。
+
+> **NAS 账号版（2026-11-01）**：已部署到 <https://mingli.linjay.fun:16666/>。支持注册登录、个人档案、按账号保存的单盘、双人合盘与完整解读历史、跨设备恢复、JSON 备份和手机布局；运行环境为 Node.js 24。部署、旧记录迁移与回滚见 [NAS 部署说明](./docs/NAS部署.md)。下文较早的“仅浏览器本地历史”说明保留作历史参考，当前记录会同步到账号数据库。
+
+> **通俗解读**：六主题与合盘新增“专业 / 通俗”切换。保留原专业内容，用日常语言、术语翻译和假设生活场景帮助理解；两版分别保存、跨设备同步，并支持 JSON v4 备份。继续使用 NAS 内 Codex CLI 和本地资料检索，见[说明](./docs/AI主题标签.md)。
+
+> **AI 主题标签**：六个单盘主题分别保存和展示结果及追问，切回已有主题直接恢复；刷新、换设备与 JSON 备份均保留全部标签。旧混合记录保留拆分，见 [主题标签说明](./docs/AI主题标签.md)。
+
+> **NAS 资料检索（2026-11-01）**：既有 NAS 已迁移 v3/v4 原始资料，支持同排盘日、时辰、性别的主题匹配，以及古籍整理与《天纪》引文检索。Codex 结合节选流式解读，提供原文出处并随账号历史保存。默认个人非商业模式，覆盖、混合授权、商用过滤及重建见 [资料检索说明](./docs/资料检索.md)。约 18 GB 原件、索引、私人配置及历史截图不进 Git；克隆需另行准备这些资产，本地无索引也可开发和运行假 CLI 测试。
 
 **一、项目理念**：紫微斗数是中国传统命理学的瑰宝，倪海厦老师在《天纪》中系统梳理了正宗的紫微斗数体系。我们希望通过技术手段让更多人接触和学习这门学问。
 
@@ -272,17 +284,17 @@ Expand-Archive combined.zip
 
 ```bash
 # 克隆
-git clone https://github.com/Renhuai123/ziwei-doushu.git
+git clone https://github.com/Linjay/ziwei-doushu.git
 cd ziwei-doushu
 
 # 安装依赖
-npm install
+npm ci
 
-# 配置环境变量（只看排盘可以跳过；AI 配置仅在你自己实现了 /api/* 接口时才用得上）
+# 配置环境变量（只看排盘可以跳过；AI 解读使用已登录的本机 Codex CLI）
 cp .env.example .env.local
 
-# 启动开发服务器
-npm run dev
+# 启动开发服务器（Node.js 24）
+npm run dev -- --hostname 127.0.0.1 --port 3100
 ```
 
 本地验证：
@@ -292,9 +304,42 @@ npm run typecheck   # TypeScript 全量类型检查
 npm test            # 排盘引擎回归（768 盘 × 紫微铁律、夏令时、立春边界、红鸾天喜、样本时辰一致性、时辰序号边界、日期合法性、同宫双四化）
 ```
 
-每次 push 与 PR 都会在 GitHub Actions 上跑同一套（见 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)）。
+工作流包含以上检查、账号 / AI / 检索专项、构建和浏览器回归（见 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)）；Fork 是否启用 Actions 以仓库设置为准。当前已知失败和修复条件见 [交接](./HANDOFF.md)。
 
-> **注意：开源版不含后端 API 路由。**排盘、命盘展示、合盘起盘都在浏览器里用本仓库的引擎完成，**不需要任何 API Key**。AI 解读（`/api/interpret`）和合盘 AI 分析（`/api/heming`）需要你自己实现接口；没实现之前，这两处会直接提示「开源版不含该接口」，配置 API Key 也不会变成可用（#30 就是这个原因）。
+### 本地 Codex CLI 解读
+
+排盘在浏览器中完成，AI 服务端会核验输入并重新计算。本版本的 `/api/interpret` 与 `/api/heming` 通过 `codex app-server --listen stdio://` 调用部署环境中的 CLI，创建只读临时会话，传入命盘、格局、有限对话和可选检索节选。网页用户无需填写 API Key。
+
+1. 确认本机 `codex --version` 可用，并通过 `codex login status` 确认登录；需要时执行 `codex login`。
+2. 将 `.env.example` 复制为 `.env.local`。`CODEX_MODEL` 留空时继承 CLI 默认模型，也可以为此项目指定账户支持的模型；`CODEX_REASONING_EFFORT` 控制推理强度，`CODEX_TIMEOUT_MS` 控制单次最长等待时间。CLI 通常会自动发现，需要时用 `CODEX_CLI_PATH` 指向原生可执行文件或 `codex.js`。
+3. 使用 `npm run dev -- --hostname 127.0.0.1 --port 3100`，打开 <http://127.0.0.1:3100/>，登录或快速体验。起盘后自动生成总览，可以切换主题、点选宫位和追问；等待时可点“停止”。先检查端口占用。
+
+`CODEX_MODEL` 使用各自账号支持的模型；这里只是在部署环境启动 CLI，推理由在线模型服务执行并使用对应账号额度。克隆不包含原开发电脑或 NAS 的 CLI 登录、`.env.local` 和用户库；假 CLI 测试无需这些资产。
+
+CLI 提示词通过标准输入传递，不经过 shell；禁用 shell 工具和 MCP，使用只读临时会话。接口校验登录与配置的允许来源，同时最多运行两个解读；停止、断开或超时结束对应进程。后端将 `item/agentMessage/delta` 转成 SSE，页面持续追加文字，完成时只补齐尾部。点击“停止”保留已输出内容。
+
+### 账号历史与本地缓存
+
+完整命盘、合盘双方、全部主题及专业 / 通俗解读同步到当前账号的 SQLite，浏览器另存账号缓存。登录后在“历史”切换记录，刷新或换设备可恢复已同步内容；“新建命盘”保留原记录。恢复已有答案不重复调用 CLI，主动切换空主题或追问才生成。
+
+生成中定期保存，完成或停止后触发同步；中断保留已收到的内容并提示未完成。显示“已同步到账户”才代表保存成功，弱网或立即关页不能保证尚未上传的文字已入库。历史保留全部对话，AI 上下文按长度裁剪。
+
+旧版 `ziwei_chart_records_v1` 属于原浏览器及原站点，不会自动出现在 NAS。在原地址导出 JSON 后登录目标站导入；同站旧缓存可主动选择“导入旧浏览器记录”。本地开发账号库与 NAS 独立，清除浏览器缓存不会删除服务器上已同步记录。
+
+#### JSON 备份与跨浏览器恢复
+
+在“历史”页的备份操作中点击“导出 JSON”，下载包含完整命盘、AI 回答、追问、主题、专业 / 通俗及资料出处的备份。文件名带北京时间。
+
+换设备登录同一账号即可查看已同步历史；跨站或离线备份恢复时，登录目标账号并在“历史”导入 JSON。相同记录去重，内容冲突保留副本，主动导入允许恢复删除项；校验失败会提示错误。JSON 含私人出生资料，请妥善保存。
+
+备份采用 UTF-8 JSON，含 `format`、`version` 和 `exportedAt`。v1 旧单盘、v2 合盘、v3 独立主题、v4 专业 / 通俗，四版均可导入；单文件上限 20 MB。导入同步到当前账号，恢复不自动重生成；生成中导出会保留已收到文字并标记未完成。具体格式约定见 [交接](./HANDOFF.md)。
+
+```bash
+npm run typecheck
+npm run test:ai  # CLI 进程、取消/超时、参数校验及 SSE 分片测试；不调用真实模型
+npm run test:history  # 完整结果恢复、中断快照、多记录和存储失败测试
+npm test         # 原有排盘回归
+```
 
 ---
 

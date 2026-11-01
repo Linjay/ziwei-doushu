@@ -1,0 +1,45 @@
+name: mingli
+services:
+  app:
+    image: mingli:${MINGLI_IMAGE_TAG:-local}
+    build:
+      context: ${MINGLI_BUILD_CONTEXT:-.}
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:13100}
+        CODEX_VERSION: 0.145.0
+    container_name: mingli
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${MINGLI_BIND_ADDRESS:-127.0.0.1}:${MINGLI_PORT:-13100}:3000"
+    environment:
+      APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-http://localhost:13100,http://127.0.0.1:13100}
+      CODEX_MODEL: ${CODEX_MODEL:-}
+      CODEX_REASONING_EFFORT: ${CODEX_REASONING_EFFORT:-medium}
+      CODEX_TIMEOUT_MS: 180000
+      AUTH_REQUIRED: "true"
+      MINGLI_DATA_DIR: /data
+      KNOWLEDGE_DB_PATH: /knowledge/index/knowledge.sqlite
+      KNOWLEDGE_REQUIRED: ${KNOWLEDGE_REQUIRED:-true}
+      KNOWLEDGE_USE_MODE: ${KNOWLEDGE_USE_MODE:-personal}
+      CODEX_HOME: /home/node/.codex
+      TZ: Asia/Shanghai
+      APP_VERSION: ${MINGLI_IMAGE_TAG:-local}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      ALL_PROXY: ${ALL_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1}
+    volumes:
+      - ./data:/data
+      - ./codex:/home/node/.codex
+      - ./knowledge:/knowledge:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

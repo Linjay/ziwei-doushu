@@ -1,11 +1,16 @@
 'use client';
-import { useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { AccountGuard, useAccount } from '@/components/AccountProvider';
 import BirthForm from '@/components/BirthForm';
 import ChartBoard from '@/components/ChartBoard';
 import InsightPanel from '@/components/InsightPanel';
-import TimeNav, { type TimeView } from '@/components/TimeNav';
+import RecordHeader from '@/components/RecordHeader';
+import PalaceDetails from '@/components/PalaceDetails';
+import { useChartHistory } from '@/lib/use-chart-history';
 import { generateChart } from '@/lib/ziwei/algorithm';
-import type { BirthInfo, ZiweiChart, Palace } from '@/lib/ziwei/types';
+import { isComparisonRecord, recordHref } from '@/lib/chart-history';
+import { useRouter, useSearchParams } from 'next/navigation';
+import type { BirthInfo, Palace } from '@/lib/ziwei/types';
 
 /**
  * 命盘页 —— 开源版「排盘引擎 Demo」
@@ -18,58 +23,64 @@ import type { BirthInfo, ZiweiChart, Palace } from '@/lib/ziwei/types';
  * 完全开放（见 lib/ziwei/*），可自由二次开发出你自己的界面。
  */
 export default function ChartPage() {
-  const [chart, setChart] = useState<ZiweiChart | null>(null);
+  return <Suspense fallback={<main className="account-shell">正在读取命盘…</main>}><AccountGuard><ChartContent /></AccountGuard></Suspense>;
+}
+function ChartContent() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const { user } = useAccount();
+  const mobileTab = params.get('view') === 'insight' ? 'insight' : 'chart';
   const [selectedPalace, setSelectedPalace] = useState<Palace | null>(null);
-  const [view, setView] = useState<TimeView>('mingpan');
-  const [liunianYear, setLiunianYear] = useState(() => new Date().getFullYear());
+  const [detailPalace, setDetailPalace] = useState<Palace | null>(null);
+  const [freshRecordId, setFreshRecordId] = useState<string | null>(null);
+  const { history, ready, storageError, syncState, retrySync, create, select, updateInsight } = useChartHistory();
+  useEffect(() => {
+    if (!ready) return;
+    if (params.get('new') === '1') { if (history.activeId) select(null); router.replace('/chart'); return; }
+    const id = params.get('record');
+    const target = history.records.find(record => record.id === id);
+    if (target && isComparisonRecord(target)) { router.replace(recordHref(target)); return; }
+    if (target && history.activeId !== target.id) select(target.id);
+  }, [ready, history.records, history.activeId, params, select, router]);
+  const activeRecord = history.records.find(record => record.id === history.activeId && !isComparisonRecord(record));
+  const chart = activeRecord?.chart;
+  const fresh = () => { setFreshRecordId(null); setSelectedPalace(null); router.replace('/chart?new=1'); };
+  const showView = (view: string) => { router.replace(`/chart?record=${activeRecord!.id}${view === 'insight' ? '&view=insight' : ''}`, { scroll:false }); };
+
+  if (!ready) return <main className="account-shell"><p role="status">正在读取账号记录…</p></main>;
 
   // ── 未起盘：展示出生信息表单 ──
-  if (!chart) {
+  if (!activeRecord || !chart) {
     return (
-      <main style={{ maxWidth: 720, margin: '0 auto', padding: '48px 20px' }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>紫微斗数排盘</h1>
-        <p style={{ color: '#888', marginBottom: 32, fontSize: 14, lineHeight: 1.7 }}>
-          输入出生年月日时，开源排盘引擎即时生成命盘。
-          <br />
-          （本页为引擎 Demo，完整商业版界面不在开源范围；排盘内核完全开放。）
+      <main className="chart-shell chart-create" style={{ maxWidth: 640 }}>
+        <h1>新建命盘</h1>
+        <p className="muted create-intro">
+          填写出生资料，校对后生成命盘。未提交的资料会保留在此设备的当前会话。
         </p>
-        <BirthForm onSubmit={(info: BirthInfo) => setChart(generateChart(info))} />
+        {storageError && <p role="alert" className="form-error">{storageError}</p>}
+        <BirthForm draftKey="single" initialData={{ name: user?.profile.displayName, year: user?.profile.birthday.slice(0, 4), month: user?.profile.birthday ? String(Number(user.profile.birthday.slice(5, 7))) : '', day: user?.profile.birthday ? String(Number(user.profile.birthday.slice(8, 10))) : '', clockHour: user?.profile.birthTime ? String(Number(user.profile.birthTime.slice(0, 2))) : '8', clockMinute: user?.profile.birthTime ? String(Number(user.profile.birthTime.slice(3, 5))) : '0', gender: user?.profile.gender || 'male' }} onSubmit={(info: BirthInfo) => { const id = create(generateChart(info)); setFreshRecordId(id); router.replace(`/chart?record=${id}`); }} />
       </main>
     );
   }
 
   // ── 已起盘：命盘 + 解读 ──
   return (
-    <main style={{ maxWidth: 1280, margin: '0 auto', padding: '24px 16px' }}>
-      <button
-        type="button"
-        onClick={() => { setChart(null); setSelectedPalace(null); }}
-        style={{
-          marginBottom: 16, padding: '6px 14px', cursor: 'pointer',
-          border: '1px solid #ccc', borderRadius: 8, background: 'transparent',
-        }}
-      >
-        ← 重新起盘
-      </button>
+    <main className="chart-shell chart-reading" style={{ maxWidth: 1280 }}>
+      <RecordHeader title={activeRecord.label} syncState={syncState} error={storageError} onRetry={retrySync} onNew={fresh} />
 
-      <TimeNav
-        chart={chart}
-        view={view}
-        liunianYear={liunianYear}
-        onViewChange={setView}
-        onYearChange={setLiunianYear}
-      />
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 380px)',
-          gap: 20, marginTop: 16, alignItems: 'start',
-        }}
-      >
-        <ChartBoard chart={chart} onPalaceSelect={setSelectedPalace} />
-        <InsightPanel chart={chart} selectedPalace={selectedPalace} />
+      <div className="mobile-chart-tabs segmented" role="group" aria-label="命盘与解读视图">
+        <button aria-pressed={mobileTab === 'chart'} onClick={() => showView('chart')}>十二宫命盘</button>
+        <button aria-pressed={mobileTab === 'insight'} onClick={() => showView('insight')}>AI 解读</button>
       </div>
+      <div className="chart-layout">
+        <div className="chart-mobile-panel" data-active={mobileTab === 'chart'}><ChartBoard key={`chart-${activeRecord.id}`} chart={chart} onPalaceSelect={setDetailPalace} /></div>
+        <div className="chart-mobile-panel" data-active={mobileTab === 'insight'}><InsightPanel key={`insight-${activeRecord.id}`} chart={chart} selectedPalace={selectedPalace}
+          readingKey={activeRecord.id}
+          initialState={activeRecord.insight}
+          autoInterpret={freshRecordId === activeRecord.id}
+          onStateChange={(insight, immediate) => updateInsight(activeRecord.id, insight, immediate)} /></div>
+      </div>
+      {detailPalace && <PalaceDetails palace={detailPalace} onClose={() => setDetailPalace(null)} onInterpret={() => { setSelectedPalace(detailPalace); setDetailPalace(null); showView('insight'); }} />}
     </main>
   );
 }

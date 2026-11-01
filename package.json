@@ -7,6 +7,19 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test:navigation": "tsx --test scripts/navigation.test.ts",
+    "test:birth": "tsx --test scripts/birth-input.test.ts",
+    "test:browser": "tsx scripts/mobile-browser.test.mjs && tsx scripts/guest-browser.test.mjs && tsx scripts/home-browser.test.mjs && tsx scripts/plain-reading-browser.test.mjs",
+    "test:plain-browser": "tsx scripts/plain-reading-browser.test.mjs",
+    "test:home-browser": "tsx scripts/home-browser.test.mjs",
+    "test:reading-visuals": "tsx --test scripts/reading-visuals.test.ts",
+    "test:guest-browser": "tsx scripts/guest-browser.test.mjs",
+    "test:ai": "tsx --conditions=react-server --test scripts/local-ai.test.ts",
+    "test:history": "tsx --test scripts/chart-history.test.ts",
+    "test:accounts": "tsx --conditions=react-server --test scripts/accounts.test.ts scripts/device-auth.test.ts scripts/device-migration.test.ts",
+    "test:knowledge": "tsx --conditions=react-server --test scripts/knowledge.test.ts",
+    "repro:cross-tab": "tsx scripts/repros/cross-tab-account.mjs",
+    "repro:device-token": "tsx --conditions=react-server scripts/repros/device-token-rotation.ts",
     "test": "tsx scripts/regression/pan-integrity.test.ts && tsx scripts/regression/dst-cn.test.ts && tsx scripts/regression/clock-adjust.test.ts && tsx scripts/regression/sizhu-lichun-boundary.test.ts && tsx scripts/regression/hongluan-tianxi.test.ts && tsx scripts/regression/famous-hour-consistency.test.ts && tsx scripts/regression/iztro-time-index-boundary.test.ts && tsx scripts/regression/solar-date-exists.test.ts && tsx scripts/regression/natal-dual-sihua-same-palace.test.ts && tsx scripts/regression/neutral-naming.test.ts"
   },
   "dependencies": {
@@ -19,14 +32,16 @@
     "html2canvas": "^1.4.1",
     "ioredis": "^5.10.1",
     "iztro": "^2.5.8",
+    "lucide-react": "1.66.0",
     "lunar-javascript": "^1.7.3",
     "next": "^16.3.8",
     "pg": "^8.20.0",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "server-only": "0.0.1"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@types/node": "^24.19.2",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.0",

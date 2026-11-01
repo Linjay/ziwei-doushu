@@ -1,0 +1,96 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { cp, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { randomBytes, randomUUID } from 'node:crypto';
+import net from 'node:net';
+import path from 'node:path';
+import { BrowserSession } from './helpers/cdp-browser.mjs';
+import { generateChart } from '../lib/ziwei/algorithm.ts';
+import { addChartRecord, addComparisonRecord, emptyHistory, updateRecordInsight } from '../lib/chart-history.ts';
+import { projectInsight } from '../lib/insight-topics.ts';
+
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const freePort=()=>new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
+await mkdir('.codex-local',{recursive:true});const run=await mkdtemp(path.resolve('.codex-local/plain-browser-'));
+const remote=process.env.PLAIN_TEST_BASE_URL,port=remote?null:await freePort(),base=remote||`http://127.0.0.1:${port}`,browserPort=await freePort();
+const out=process.env.PLAIN_TEST_EVIDENCE_DIR?path.resolve(process.env.PLAIN_TEST_EVIDENCE_DIR):run;await mkdir(out,{recursive:true});
+const report={surface:base,run,physicalDevice:false,checks:{},sizes:[],accountFile:path.join(run,'accounts.json')};
+const account={username:'plainqa_'+Date.now(),password:randomBytes(18).toString('hex')};
+const requests=[],pages=[];let server,chrome,browser,page,other;
+async function ready(url){for(let i=0;i<100;i++){try{if((await fetch(url)).ok)return;}catch{}await delay(150);}throw new Error('Service unavailable');}
+async function check(name,fn){await fn();report.checks[name]=true;console.log('PASS '+name);await writeFile(path.join(out,'plain-browser-verification.json'),JSON.stringify(report,null,2));}
+async function api(endpoint,method='GET',body,p=page){return p.evaluate(`(async()=>{const r=await fetch(${JSON.stringify(endpoint)},{method:${JSON.stringify(method)},headers:{'Content-Type':'application/json'},${body===undefined?'':`body:JSON.stringify(${JSON.stringify(body)}),`}});const data=await r.json();if(!r.ok)throw new Error(JSON.stringify(data));return data})()`);}
+async function click(selector,p=page){await p.evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw new Error('Missing control');e.click()})()`);}
+async function button(label,p=page){await p.evaluate(`(()=>{const e=Array.from(document.querySelectorAll('button')).find(e=>e.getBoundingClientRect().width&&e.innerText.trim()===${JSON.stringify(label)});if(!e)throw new Error('Missing button '+${JSON.stringify(label)});e.click()})()`);}
+async function mode(value,p=page){await click(`[aria-label="${value==='plain'?'通俗解读':'专业解读'}"]`,p);}
+async function done(kind='single',p=page){await p.wait(kind==='single'?'document.querySelector("[role=tabpanel] .reading-text")&&!document.querySelector(".insight-composer textarea").disabled':'document.querySelector(".comparison-messages .reading-text")&&!document.querySelector(".pair-composer textarea").disabled',180000);await p.wait('document.body.innerText.includes("已同步到账户")',30000);}
+async function reload(p=page){const epoch=await p.evaluate('performance.timeOrigin');await p.send('Page.reload');await p.wait(`performance.timeOrigin!==${epoch}`);}
+async function shot(name){await delay(180);await page.screenshot(path.join(out,name+'.png'));}
+try{
+  if(!remote){await cp('.next/static','.next/standalone/.next/static',{recursive:true});server=spawn(process.execPath,['.next/standalone/server.js'],{windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...process.env,PORT:String(port),HOSTNAME:'127.0.0.1',MINGLI_DATA_DIR:path.join(run,'data'),CODEX_CLI_PATH:path.resolve('scripts/fixtures/codex-fake.mjs'),APP_ALLOWED_ORIGINS:base,AUTH_REQUIRED:'true',KNOWLEDGE_REQUIRED:'false',KNOWLEDGE_DB_PATH:'',NEXT_TELEMETRY_DISABLED:'1'}});let logs='';for(const s of[server.stdout,server.stderr])s.on('data',chunk=>{logs=(logs+chunk).slice(-16000);void writeFile(path.join(run,'server.log'),logs);});}
+  await ready(base+'/api/health');chrome=spawn(process.env.CHROME_PATH||(process.platform==='win32'?'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe':'/usr/bin/google-chrome'),['--headless=new',`--remote-debugging-port=${browserPort}`,`--user-data-dir=${path.join(run,'chrome')}`,'--no-first-run','--no-default-browser-check',...(process.platform==='linux'?['--no-sandbox']:[]),'about:blank'],{windowsHide:true,stdio:'ignore'});
+  await ready(`http://127.0.0.1:${browserPort}/json/version`);const info=await fetch(`http://127.0.0.1:${browserPort}/json/version`).then(r=>r.json());browser=await BrowserSession.connect(info.webSocketDebuggerUrl);page=await BrowserSession.page(browserPort);pages.push(page);await page.size(390,844,true);await page.send('Network.enable');page.socket.addEventListener('message',event=>{const m=JSON.parse(event.data);if(m.method==='Network.requestWillBeSent'&&/\/api\/(interpret|heming)$/.test(m.params.request.url))requests.push(JSON.parse(m.params.request.postData));});
+  await page.navigate(base+'/login');await page.wait('document.querySelector("[name=username]")');const registered=await api('/api/auth/register','POST',account);await writeFile(report.accountFile,JSON.stringify([{id:registered.user.id,username:registered.user.username}]));
+  const chart=generateChart({year:1990,month:6,day:15,hour:6,gender:'male',name:'白话验收甲'}),chartB=generateChart({year:1992,month:8,day:20,hour:3,gender:'female',name:'白话验收乙'});
+  const single=randomUUID(),pair=randomUUID(),now=Date.now();
+  const topics=Object.fromEntries(['overview','love','career','wealth','health','personality'].map(key=>[key,{messages:[{role:'assistant',content:key+' 专业原文：命宫是排盘中讨论个人特点的位置，需要综合全盘；现实表现因人而异。\n\n'+('本段用于验证专业内容完整保留，不是对真实经历的认定。\n\n').repeat(12)}],phase:'complete',updatedAt:now}]));
+  let history=updateRecordInsight(addChartRecord(emptyHistory(),chart,single,now),single,projectInsight(topics,'overview'),now+1);
+  history=updateRecordInsight(addComparisonRecord(history,chart,chartB,pair,now),pair,{activeTopic:'overview',phase:'complete',messages:[{role:'assistant',content:'专业合盘原文：甲方、乙方需综合各自命盘理解差异，沟通方式可以调整，不能断言必然的关系结果。'}]},now+2);
+  await api('/api/history','PUT',history);await page.navigate(base+'/chart?record='+single+'&view=insight');await page.wait('document.querySelector("[aria-label=通俗解读]")');
+  await check('six-icon-topics-and-reading-modes-occupy-separate-usable-rows',async()=>{
+    for(const width of[320,360,390,430,768,1440]){
+      await page.size(width,844,width<768);await delay(80);
+      const layout=await page.evaluate('(()=>{const list=document.querySelector(".insight-topics"),mode=document.querySelector(".insight-mode-row"),tabs=Array.from(list.querySelectorAll("[role=tab]"));return {width:innerWidth,scroll:document.documentElement.scrollWidth,list:list.getBoundingClientRect().toJSON(),mode:mode.getBoundingClientRect().toJSON(),tabs:tabs.map(tab=>({bounds:tab.getBoundingClientRect().toJSON(),icon:tab.querySelectorAll("svg").length,uncovered:innerWidth>760||document.elementFromPoint(tab.getBoundingClientRect().x+tab.getBoundingClientRect().width/2,tab.getBoundingClientRect().y+tab.getBoundingClientRect().height/2)?.closest("[role=tab]")===tab}))}})()');
+      report.sizes.push({readingControls:layout});
+      assert.ok(layout.scroll<=layout.width+1,JSON.stringify(layout));assert.equal(layout.tabs.length,6);assert.ok(layout.list.bottom<=layout.mode.top+1);assert.ok(layout.tabs.every(tab=>tab.icon===1&&tab.bounds.height>=48&&tab.bounds.width>=44&&tab.bounds.left>=layout.list.left-1&&tab.bounds.right<=layout.list.right+1&&tab.uncovered),JSON.stringify(layout));
+    }
+    await page.size(390,844,true);await page.evaluate('document.querySelector("[role=tabpanel]").scrollTop=0');await shot('03-topic-icons-and-separate-mode-row');
+  });
+  await check('saved-chart-diagrams-follow-every-topic-and-interact-without-an-ai-request',async()=>{
+    const count=requests.length;
+    for(const [label,palace] of[['命格','命宫'],['感情','夫妻宫'],['事业','官禄宫'],['财运','财帛宫'],['健康','疾厄宫'],['性格','命宫']]){
+      await button(label);await page.wait('document.querySelector("[role=tabpanel] .reading-guide")');await page.evaluate('document.querySelector("[role=tabpanel]").scrollTop=0');await click('.reading-guide summary');
+      assert.equal(await page.evaluate('document.querySelectorAll(".reading-palace-options button").length'),4);assert.ok(await page.evaluate(`document.querySelector('.reading-diagram-svg').getAttribute('aria-label').includes(${JSON.stringify(palace)})`));
+      await click('.reading-palace-options button:nth-child(2)');assert.equal(await page.evaluate('document.querySelector(".reading-palace-options button:nth-child(2)").getAttribute("aria-pressed")'),'true');assert.ok(await page.evaluate('document.querySelector(".reading-palace-facts").innerText.includes("本盘主星")'));
+      if(label==='感情'){await page.evaluate('document.querySelector("[role=tabpanel]").scrollTop=0');await shot('04-love-palace-diagram');await page.evaluate('document.documentElement.dataset.theme="light"');await shot('04b-light-palace-diagram');await page.evaluate('document.documentElement.dataset.theme="dark"');}
+      await click('.reading-guide summary');
+    }
+    await button('命格');await page.evaluate('document.querySelector("[role=tabpanel]").scrollTop=0');assert.equal(requests.length,count);
+  });
+  await check('plain-stream-uses-saved-professional-without-replacing-it',async()=>{
+    const old=await page.evaluate('document.querySelector("[role=tabpanel]").innerText');const started=Date.now();await mode('plain');await page.wait('document.querySelector("[data-reading-mode=plain] .reading-text")?.innerText.trim().length>0',180000);report.firstTextMs=Date.now()-started;await done();report.singleCompleteMs=Date.now()-started;
+    const text=await page.evaluate('document.querySelector("[role=tabpanel]").innerText');assert.ok(text.includes('先说人话'));assert.ok(text.includes('术语翻译'));assert.equal(requests.at(-1).readingMode,'plain');assert.ok(requests.at(-1).professionalReference.text.includes('overview 专业原文'));assert.ok(!requests.at(-1).messages.some(m=>m.content.includes('overview 专业原文')));
+    const saved=(await api('/api/history')).history.records.find(r=>r.id===single);assert.deepEqual(saved.insight.topics.overview,topics.overview);assert.equal(saved.insight.plainTopics.overview.phase,'complete');assert.ok(saved.insight.plainTopics.overview.messages.at(-1).content.includes('先说人话'));
+    await shot('01-single-plain');await mode('professional');assert.equal(await page.evaluate('document.querySelector("[role=tabpanel]").innerText'),old);
+  });
+  await check('modes-have-independent-drafts-scroll-and-cached-content',async()=>{
+    await page.fill('.insight-composer textarea','专业草稿');await page.evaluate('{const e=document.querySelector("[role=tabpanel]");e.scrollTop=220;e.dispatchEvent(new Event("scroll"));}');const count=requests.length;await mode('plain');assert.equal(await page.evaluate('document.querySelector(".insight-composer textarea").value'),'');await page.fill('.insight-composer textarea','通俗草稿');await mode('professional');assert.equal(await page.evaluate('document.querySelector(".insight-composer textarea").value'),'专业草稿');assert.ok(await page.evaluate('document.querySelector("[role=tabpanel]").scrollTop>200'));await mode('plain');assert.equal(await page.evaluate('document.querySelector(".insight-composer textarea").value'),'通俗草稿');assert.equal(requests.length,count);
+  });
+  if(!remote)await check('all-six-topics-and-followups-stay-in-their-reading-mode',async()=>{
+    for(const label of['感情','事业','财运','健康','性格']){await button(label);await done();assert.equal(requests.at(-1).readingMode,'plain');assert.equal(requests.at(-1).messages.length,1);await mode('professional');assert.ok(await page.evaluate('document.querySelector("[role=tabpanel]").innerText.includes("专业原文")'));await mode('plain');}
+    await page.fill('.insight-composer textarea','怎么理解 __CONTEXT__');await click('[aria-label="发送追问"]');await done();const last=requests.at(-1);assert.equal(last.readingMode,'plain');assert.ok(last.messages.some(m=>m.role==='assistant'&&m.content.includes('先说人话')));assert.ok(!last.messages.some(m=>m.content.includes('专业原文')));await button('命格');
+  });
+  await check('cached-plain-survives-refresh-and-mobile-controls-fit',async()=>{
+    const count=requests.length;await reload();await page.wait('document.querySelector("[data-reading-mode=plain] .reading-text")');assert.equal(requests.length,count);assert.equal(await page.evaluate('document.querySelector(".insight-composer textarea").value'),'通俗草稿');
+    for(const width of[320,390,430,768,1440]){await page.size(width,844,width<768);await delay(70);const metrics=await page.evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth,buttons:Array.from(document.querySelectorAll(".reading-mode-switch button")).map(e=>e.getBoundingClientRect().toJSON()),input:document.querySelector(".insight-composer textarea").getBoundingClientRect().toJSON()})');assert.ok(metrics.scroll<=metrics.width+1);assert.ok(metrics.buttons.every(b=>b.height>=48&&b.width>=44));if(width<768)assert.ok(metrics.input.bottom<=844);report.sizes.push(metrics);}
+    await page.size(390,500,true);await page.evaluate('document.querySelector(".insight-composer textarea").focus()');assert.ok(await page.evaluate('document.querySelector(".insight-composer textarea").getBoundingClientRect().bottom<=innerHeight'));await page.size(390,844,true);
+  });
+  if(!remote)await check('switching-mid-stream-retains-partials-and-ignores-late-deltas',async()=>{
+    await page.fill('.insight-composer textarea','__PAIR_SLOW__');await click('[aria-label="发送追问"]');await page.wait('document.querySelector(".insight-composer textarea").disabled');await delay(200);await mode('professional');await delay(1200);assert.ok(await page.evaluate('document.querySelector("[role=tabpanel]").innerText.includes("overview 专业原文")'));const record=(await api('/api/history')).history.records.find(r=>r.id===single);assert.equal(record.insight.plainTopics.overview.phase,'interrupted');await mode('plain');
+  });
+  await check('comparison-has-separate-plain-stream-and-retains-professional',async()=>{
+    await page.navigate(base+'/heming?record='+pair);await page.wait('document.querySelector(".comparison-messages .reading-text")');const old=await page.evaluate('document.querySelector(".comparison-messages").innerText');await click('.reading-guide summary');assert.equal(await page.evaluate('document.querySelectorAll(".reading-diagram-svg").length'),2);assert.ok(await page.evaluate('document.querySelector(".reading-guide-content").innerText.includes("甲方")&&document.querySelector(".reading-guide-content").innerText.includes("乙方")'));await shot('05-comparison-diagrams');await click('.reading-guide summary');await mode('plain');await done('pair');assert.equal(requests.at(-1).readingMode,'plain');assert.ok(requests.at(-1).professionalReference.text.includes('专业合盘原文'));assert.ok(await page.evaluate('document.querySelector(".comparison-messages").innerText.includes("先说人话")'));await shot('02-comparison-plain');await mode('professional');assert.equal(await page.evaluate('document.querySelector(".comparison-messages").innerText'),old);await mode('plain');await reload();await page.wait('document.querySelector("[data-reading-mode=plain] .reading-text")');
+  });
+  if(!remote)await check('comparison-switch-mid-stream-keeps-the-other-style-unchanged',async()=>{
+    await page.fill('.pair-composer textarea','__PAIR_SLOW__');await click('[aria-label="发送合盘追问"]');await page.wait('document.querySelector(".pair-composer textarea").disabled');await delay(200);await mode('professional');await delay(1200);assert.ok(await page.evaluate('document.querySelector(".comparison-messages").innerText.includes("专业合盘原文")'));assert.ok(!await page.evaluate('document.querySelector(".comparison-messages").innerText.includes("先说人话")'));const record=(await api('/api/history')).history.records.find(r=>r.id===pair);assert.equal(record.insight.plainTopics.overview.phase,'interrupted');await mode('plain');
+  });
+  await check('actual-v4-download-reimport-preserves-both-reading-styles',async()=>{
+    await page.navigate(base+'/history');await page.wait('document.querySelectorAll(".record-card").length===2');await click('.backup-toolbar summary');const download=path.join(run,'downloads');await mkdir(download);const{targetInfo}=await page.send('Target.getTargetInfo');await page.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:download,browserContextId:targetInfo.browserContextId});await button('导出 JSON');let file;for(let i=0;i<50;i++){file=(await readdir(download)).find(f=>f.endsWith('.json'));if(file)break;await delay(100);}assert.ok(file);file=path.join(download,file);const backup=JSON.parse(await readFile(file,'utf8'));assert.equal(backup.version,4);for(const record of backup.records){assert.ok(record.insight.plainTopics.overview.messages.length);assert.ok(record.insight.messages.some(m=>m.content.includes('专业')));}
+    const{root}=await page.send('DOM.getDocument');const{nodeId}=await page.send('DOM.querySelector',{nodeId:root.nodeId,selector:'input[type=file]'});await page.send('DOM.setFileInputFiles',{nodeId,files:[file]});await page.wait('document.body.innerText.includes("跳过 2 条重复记录")');
+  });
+  await check('another-browser-restores-both-modes-without-regeneration',async()=>{
+    other=await BrowserSession.page(browserPort);pages.push(other);await other.size(390,844,true);await other.navigate(base+'/chart?record='+single+'&view=insight');await other.wait('document.querySelector("[name=username]")');await other.fill('[name=username]',account.username);await other.fill('[name=password]',account.password);await other.evaluate('document.querySelector("form").requestSubmit()');await other.wait('document.querySelector("[data-reading-mode=plain] .reading-text")');await mode('professional',other);assert.ok(await other.evaluate('document.querySelector("[role=tabpanel]").innerText.includes("overview 专业原文")'));await mode('plain',other);assert.ok(await other.evaluate('document.querySelector("[role=tabpanel]").innerText.includes("先说人话")'));await other.navigate(base+'/heming?record='+pair);await other.wait('document.querySelector("[data-reading-mode=plain] .reading-text")');await mode('professional',other);assert.ok(await other.evaluate('document.querySelector(".comparison-messages").innerText.includes("专业合盘原文")'));
+  });
+  report.errors=pages.flatMap(p=>p.errors);assert.equal(report.errors.length,0);report.aiRequests=requests.length;report.realCodex=Boolean(remote);report.passed=true;
+}catch(error){report.passed=false;report.failure=error.stack;console.error(error.stack);if(page)try{await shot('failure');}catch{}process.exitCode=1;}
+finally{await writeFile(path.join(out,'plain-browser-verification.json'),JSON.stringify(report,null,2));await writeFile('.codex-local/plain-browser-latest.json',JSON.stringify(report,null,2));console.log(JSON.stringify({passed:report.passed,checks:Object.keys(report.checks).length,run}));for(const p of pages)p.close();if(browser){try{await browser.send('Browser.close');}catch{}browser.close();}else chrome?.kill();server?.kill();}

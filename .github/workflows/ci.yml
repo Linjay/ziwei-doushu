@@ -16,7 +16,7 @@ jobs:
       # 仓库已提交 package-lock.json：按锁定版本安装，并开 npm 缓存
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - name: 安装依赖
@@ -25,5 +25,34 @@ jobs:
       - name: 类型检查
         run: npm run typecheck
 
+      - name: 登录返回路径与跳转限制
+        run: npm run test:navigation
+
+      - name: 公农历输入、真太阳时与换日一致性
+        run: npm run test:birth
+
+      - name: 本地 AI 接入测试（不调用模型）
+        run: npm run test:ai
+
+      - name: 本地历史存储测试
+        run: npm run test:history
+
+      - name: 解读图示与保存命盘一致性
+        run: npm run test:reading-visuals
+
+      - name: 账号、会话与历史隔离测试
+        run: npm run test:accounts
+
+      - name: 本地资料索引、检索与授权过滤测试
+        run: npm run test:knowledge
+
       - name: 排盘引擎回归
         run: npm test
+
+      - name: 生产构建
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      - name: 手机布局、登录返回与历史恢复浏览器回归
+        run: npm run test:browser

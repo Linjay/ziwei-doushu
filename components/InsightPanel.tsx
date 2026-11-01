@@ -1,13 +1,25 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
+import ReadingText from './ReadingText';
+import ReadingModeSwitch from './ReadingModeSwitch';
+import ReadingGuide from './ReadingGuide';
+import { TOPIC_ICONS } from './TopicIcons';
+import { professionalReference, readingKey as modeKey, type ReadingMode } from '@/lib/reading-modes';
+import { useReadingScroll } from '@/lib/use-reading-scroll';
+import { ArrowDown, Send } from 'lucide-react';
+import { useAccountDraft } from '@/lib/use-account-draft';
+import { useAccount } from './AccountProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ZiweiChart, Palace } from '@/lib/ziwei/types';
 import type { TimeView } from './TimeNav';
+import { readAIStream } from '@/lib/ai-stream';
+import { emptyInsight, type InsightMessage, type InsightPhase, type SavedInsight } from '@/lib/chart-history';
+import { INSIGHT_TOPICS, emptyTopic, insightMessages, isInsightTopic, mergeTopics, projectInsight, topicConversations, type InsightTopic, type TopicConversations } from '@/lib/insight-topics';
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  hidden?: boolean; // don't show user bubble for auto/topic messages
+type Message = InsightMessage;
+function restoreDrafts(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') return {};
+  return Object.fromEntries(Object.entries(value).filter(([key, text]) => (isInsightTopic(key) || /^(professional|plain):(overview|love|career|wealth|health|personality)$/.test(key)) && typeof text === 'string' && text.length <= 12000));
 }
 
 interface SelectedSiHua {
@@ -17,9 +29,13 @@ interface SelectedSiHua {
 }
 
 interface InsightPanelProps {
+  readingKey?: string;
   chart: ZiweiChart;
   selectedPalace?: Palace | null;
   selectedSiHua?: SelectedSiHua | null;
+  initialState?: SavedInsight;
+  autoInterpret?: boolean;
+  onStateChange?: (insight: SavedInsight, immediate?: boolean) => void;
 }
 
 const TOPICS = [
@@ -144,72 +160,134 @@ const PALACE_ROLES: Record<string, string> = {
   '父母宫': '父母关系、文书契约',
 };
 
-/** Render AI markdown: **【Title】** → gold header, **bold** → strong */
-function AiContent({ text, streaming }: { text: string; streaming?: boolean }) {
-  const lines = text.split('\n');
-  return (
-    <div className="space-y-0.5">
-      {lines.map((line, i) => {
-        const sectionMatch = line.match(/^\*\*【(.+?)】\*\*$/);
-        if (sectionMatch) {
-          return (
-            <div key={i} className="pt-3 pb-0.5 first:pt-0">
-              <span className="text-[11px] font-semibold tracking-wide" style={{ color: 'var(--t-gold)' }}>
-                【{sectionMatch[1]}】
-              </span>
-            </div>
-          );
-        }
-        if (line.trim() === '') return <div key={i} className="h-1" />;
-        const parts = line.split(/\*\*(.+?)\*\*/);
-        return (
-          <div key={i} className="text-[11px] leading-relaxed" style={{ color: 'var(--t-text2)' }}>
-            {parts.map((part, j) =>
-              j % 2 === 0
-                ? part
-                : <strong key={j} className="font-medium" style={{ color: 'var(--t-text)' }}>{part}</strong>
-            )}
-          </div>
-        );
-      })}
-      {streaming && (
-        <span
-          className="inline-block w-1.5 h-3 ml-0.5 animate-pulse rounded-sm align-middle"
-          style={{ background: 'var(--t-gold)', opacity: 0.6 }}
-        />
-      )}
-    </div>
-  );
-}
 
-export default function InsightPanel({ chart, selectedPalace, selectedSiHua }: InsightPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [activeTopic, setActiveTopic] = useState<string>('overview');
-  const messagesRef = useRef<Message[]>([]); // always-current copy for closures
-  const loadingRef = useRef(false);
-  const autoLoaded = useRef(false);
+export default function InsightPanel({ chart, selectedPalace, selectedSiHua, initialState, autoInterpret = true, onStateChange, readingKey = 'chart' }: InsightPanelProps) {
+  const { user } = useAccount();
+  const initial = initialState ?? emptyInsight();
+  const initialTopic = isInsightTopic(initial.activeTopic) ? initial.activeTopic : 'overview';
+  const [conversations, setConversations] = useState<TopicConversations>(() => topicConversations(initial));
+  const conversationsRef = useRef(conversations);
+  const [plainConversations,setPlainConversations]=useState<TopicConversations>(initial.plainTopics||{});
+  const plainRef=useRef(plainConversations);
+  const [readingMode,setReadingMode]=useState<ReadingMode>(initial.readingMode||'professional');
+  const modeRef=useRef(readingMode);const hasModes=useRef(initial.plainTopics!==undefined);
+  const [activeTopic, setActiveTopic] = useState<InsightTopic>(initialTopic);
+  const topicRef = useRef<InsightTopic>(initialTopic);
+  const [drafts, setDrafts] = useAccountDraft(`insight_${readingKey}`, {}, restoreDrafts);
+  const [runningTopic, setRunningTopic] = useState<string | null>(null);
+  const [status, setStatus] = useState('');
+  const requestRef = useRef<{ topic: InsightTopic; mode:ReadingMode; controller: AbortController } | null>(null);
+  const leavingRef = useRef(false);
+  const onStateChangeRef = useRef(onStateChange); onStateChangeRef.current = onStateChange;
+  const autoLoaded = useRef(!autoInterpret || insightMessages(initial).length > 0 || initial.phase !== 'idle');
   const lastPalaceBranch = useRef<number | undefined>(undefined);
   const lastSiHuaKey = useRef<string | undefined>(undefined);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Keep refs in sync
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
-  useEffect(() => { loadingRef.current = loading; }, [loading]);
-
-  // Auto-scroll
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  const current = (readingMode==='plain'?plainConversations:conversations)[activeTopic] || emptyTopic();
+  const messages = current.messages; const phase = current.phase;
+  const viewKey=modeKey(readingMode,activeTopic);
+  const loading = runningTopic === viewKey;
+  const reader = useReadingScroll(viewKey, messages, loading, `mingli_draft_${user?.id}_scroll_${readingKey}`);
+  const input = drafts[viewKey] ?? (readingMode==='professional'?drafts[activeTopic]:'') ?? '';
+  const topicLabel = TOPICS.find(topic => topic.key === activeTopic)!.label;
+  const firstAnswer = messages.findIndex(message=>message.role==='assistant'&&message.content.trim());
+  const setInput = (value: string) => setDrafts(previous => ({ ...previous, [modeKey(modeRef.current,topicRef.current)]: value }));
+  const persist = (immediate = false) => onStateChangeRef.current?.(projectInsight(conversationsRef.current, topicRef.current,hasModes.current?{plainTopics:plainRef.current,readingMode:modeRef.current}:undefined), immediate);
+  const changeTopic = (topic: InsightTopic, nextMessages: Message[], nextPhase: InsightPhase, immediate = false,mode:ReadingMode=modeRef.current) => {
+    const target=mode==='plain'?plainRef:conversationsRef;
+    const previous = target.current[topic] || emptyTopic();
+    target.current = { ...target.current, [topic]: {
+      messages: nextMessages, phase: nextPhase, updatedAt: Math.max(Date.now(), previous.updatedAt + 1),
+    } };
+    if (!leavingRef.current) (mode==='plain'?setPlainConversations:setConversations)(target.current);
+    persist(immediate);
+  };
+  const stopCurrent = (nextPhase: InsightPhase = 'stopped') => {
+    const request = requestRef.current; if (!request) return;
+    requestRef.current = null;
+    const previous = (request.mode==='plain'?plainRef:conversationsRef).current[request.topic] || emptyTopic();
+    changeTopic(request.topic, previous.messages.filter(message => message.role !== 'assistant' || message.content.length > 0), nextPhase, true,request.mode);
+    request.controller.abort();
+    if (!leavingRef.current) { setRunningTopic(null); setStatus(''); }
+  };
+  const activate = (topic: InsightTopic,mode:ReadingMode=modeRef.current) => {
+    if (topicRef.current === topic && modeRef.current===mode) return;
+    stopCurrent('interrupted');
+    topicRef.current = topic;modeRef.current=mode;setReadingMode(mode);if(mode==='plain')hasModes.current=true; setActiveTopic(topic); persist(true);
+  };
+  const promptFor=(topic:InsightTopic,mode:ReadingMode)=>mode==='plain'?`请用通俗语言解读【${TOPICS.find(item=>item.key===topic)!.label}】主题，结合已保存的专业内容解释术语、举生活例子并给出温和可行的建议。`:TOPIC_PROMPTS[topic];
+  const sendMessage = async (text: string, hidden = false, topic: InsightTopic = topicRef.current,mode:ReadingMode=modeRef.current) => {
+    if (!text.trim() || leavingRef.current) return;
+    if (requestRef.current?.topic === topic && requestRef.current.mode===mode) return;
+    activate(topic,mode);
+    reader.startFollowing(modeKey(mode,topic));
+    const prior = [...((mode==='plain'?plainRef:conversationsRef).current[topic]?.messages || []), { role: 'user' as const, content: text, hidden }];
+    const request = { topic,mode, controller: new AbortController() }; requestRef.current = request;
+    setRunningTopic(modeKey(mode,topic)); setStatus(mode==='plain'?'正在把专业内容解释得更易懂…':'Codex 正在解读命盘…');
+    setDrafts(previous => ({ ...previous, [modeKey(mode,topic)]: '',...(mode==='professional'?{[topic]:''}:{}) }));
+    changeTopic(topic, [...prior, { role: 'assistant', content: '' }], 'running', true,mode);
+    let assistantText = '';
+    try {
+      const response = await fetch('/api/interpret', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chart,readingMode:mode,professionalReference:mode==='plain'?professionalReference(conversationsRef.current[topic]?.messages||[],conversationsRef.current[topic]?.phase||'idle'):undefined, messages: prior.slice(-20).map(({ role, content }) => ({ role, content })) }), signal: request.controller.signal });
+      await readAIStream(response, text => {
+        if (requestRef.current !== request || leavingRef.current) return;
+        assistantText = text;
+        changeTopic(topic, [...prior, { role: 'assistant', content: text }], 'running',false,mode);
+      }, value => { if (requestRef.current === request && !leavingRef.current) setStatus(value); });
+      if (requestRef.current === request && !leavingRef.current) changeTopic(topic, [...prior, { role: 'assistant', content: assistantText }], 'complete', true,mode);
+    } catch (error) {
+      if (requestRef.current !== request || leavingRef.current) return;
+      const disconnected = error instanceof TypeError || (error instanceof Error && /连接中断|network|failed to fetch/i.test(error.message));
+      const message = disconnected ? '连接中断，已保留收到的内容。' : error instanceof Error ? error.message : '解读失败，请稍后重试。';
+      changeTopic(topic, [...prior, { role: 'assistant', content: assistantText ? `${assistantText}\n\n${message}` : message }], disconnected ? 'interrupted' : 'error', true,mode);
+    } finally {
+      if (requestRef.current === request) {
+        requestRef.current = null;
+        if (!leavingRef.current) { setRunningTopic(null); setStatus(''); }
+      }
     }
-  }, [messages]);
-
-  // Auto-generate 命格总览 on mount
+  };
+  const handleTopicClick = (key: string) => {
+    if (!isInsightTopic(key)) return;
+    activate(key);
+    const conversation = (modeRef.current==='plain'?plainRef:conversationsRef).current[key] || emptyTopic();
+    if (!conversation.messages.length && conversation.phase === 'idle') void sendMessage(promptFor(key,modeRef.current), true, key);
+  };
+  const handleModeClick=(mode:ReadingMode)=>{activate(topicRef.current,mode);const item=(mode==='plain'?plainRef:conversationsRef).current[topicRef.current]||emptyTopic();if(!item.messages.length&&item.phase==='idle')void sendMessage(promptFor(topicRef.current,mode),true,topicRef.current,mode);};
+  const handleSend = () => { void sendMessage(input); };
+  const topicForPalace = (name: string): InsightTopic => {
+    if (/夫妻/.test(name)) return 'love';
+    if (/官禄/.test(name)) return 'career';
+    if (/财帛|田宅/.test(name)) return 'wealth';
+    if (/疾厄/.test(name)) return 'health';
+    if (/福德/.test(name)) return 'personality';
+    if (/命宫/.test(name)) return 'overview';
+    return topicRef.current;
+  };
   useEffect(() => {
-    if (autoLoaded.current) return;
-    autoLoaded.current = true;
-    sendMessage(TOPIC_PROMPTS.overview, true);
+    if (!initialState) return;
+    const incoming = topicConversations(initialState);
+    if(initialState.plainTopics!==undefined)hasModes.current=true;
+    const plain=mergeTopics(plainRef.current,initialState.plainTopics||{});
+    if(INSIGHT_TOPICS.some(key=>plain[key]!==plainRef.current[key])){plainRef.current=plain;setPlainConversations(plain);}
+    const merged = mergeTopics(conversationsRef.current, incoming);
+    if (INSIGHT_TOPICS.some(key => merged[key] !== conversationsRef.current[key])) {
+      conversationsRef.current = merged; setConversations(merged);
+    }
+  }, [initialState]);
+  useEffect(() => {
+    leavingRef.current = false;
+    const leave = () => { leavingRef.current = true; stopCurrent('interrupted'); };
+    const show = () => { if (!leavingRef.current) return; leavingRef.current = false; setConversations(conversationsRef.current);setPlainConversations(plainRef.current); setRunningTopic(null); setStatus(''); };
+    window.addEventListener('beforeunload', leave); window.addEventListener('pagehide', leave); window.addEventListener('pageshow', show);
+    const timer = setTimeout(() => {
+      if (initialState && initialState.topics === undefined && initialState.messages.length) persist(true);
+      if (autoLoaded.current) return;
+      autoLoaded.current = true; void sendMessage(TOPIC_PROMPTS.overview, true, 'overview');
+    }, 0);
+    return () => {
+      clearTimeout(timer); window.removeEventListener('beforeunload', leave); window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', show); leave();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Inject palace analysis when palace selected
@@ -237,7 +315,7 @@ ${selectedPalace.name}在命盘中的意义，以及这种星曜配置的整体�
 **【实际建议】**
 基于此宫的具体建议。`;
 
-    sendMessage(prompt, true);
+    void sendMessage(prompt, true, topicForPalace(selectedPalace.name));
   }, [selectedPalace]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 注入四化飞化分析
@@ -271,116 +349,65 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
 **【实际建议】**
 基于此四化的具体可操作建议。`;
 
-    sendMessage(prompt, true);
+    void sendMessage(prompt, true, topicForPalace(palaceName));
   }, [selectedSiHua]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const streamResponse = async (apiMessages: { role: 'user' | 'assistant'; content: string }[]) => {
-    try {
-      const res = await fetch('/api/interpret', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chart, messages: apiMessages }),
-      });
-      if (res.status === 404) throw new Error('api-missing');
-      if (!res.ok) throw new Error('请求失败');
-      if (!res.body) throw new Error('无响应流');
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantText = '';
-
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6);
-          if (data === '[DONE]') break;
-          try {
-            const delta = JSON.parse(data).delta?.text ?? '';
-            assistantText += delta;
-            setMessages(prev => {
-              const updated = [...prev];
-              updated[updated.length - 1] = { role: 'assistant', content: assistantText };
-              return updated;
-            });
-          } catch { /* skip */ }
-        }
-      }
-    } catch (e) {
-      const missing = e instanceof Error && e.message === 'api-missing';
-      setMessages(prev => [...prev, { role: 'assistant', content: missing ? '开源版不含 AI 解读接口（/api/interpret），需要你自己实现后才能用，详见 README「快速开始」。排盘本身不需要任何 API Key。' : '解读失败，请稍后重试。' }]);
-    } finally {
-      setLoading(false);
-      loadingRef.current = false;
-    }
-  };
-
-  const sendMessage = (text: string, hidden = false) => {
-    if (!text.trim() || loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
-
-    const userMsg: Message = { role: 'user', content: text, hidden };
-    // Capture current messages synchronously via ref (avoids stale closure)
-    const apiMessages = [...messagesRef.current, userMsg].map(m => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    streamResponse(apiMessages);
-  };
-
-  const handleTopicClick = (topicKey: string) => {
-    if (loadingRef.current) return;
-    setActiveTopic(topicKey);
-    sendMessage(TOPIC_PROMPTS[topicKey], true);
-  };
-
-  const handleSend = () => {
-    sendMessage(input);
-  };
-
   return (
-    <div className="flex flex-col h-full rounded-xl overflow-hidden card-glass">
+    <div className="insight-panel flex flex-col h-full rounded-xl overflow-hidden card-glass">
 
       {/* ── Topic buttons ── */}
-      <div className="flex-shrink-0 px-2 pt-2.5 pb-2" style={{ borderBottom: '1px solid var(--t-border)' }}>
-        <div className="grid grid-cols-6 gap-1">
+      <div className="insight-controls flex-shrink-0" style={{ borderBottom: '1px solid var(--t-border)' }}>
+        <div className="insight-topics" role="tablist" aria-label="AI 解读主题">
           {TOPICS.map(t => {
             const isActive = activeTopic === t.key;
+            const Icon = TOPIC_ICONS[t.key];
             return (
               <button
                 key={t.key}
                 onClick={() => handleTopicClick(t.key)}
-                disabled={loading}
-                className="py-1.5 text-[10px] font-medium rounded-lg transition-all duration-150 disabled:opacity-40"
+                type="button" role="tab" id={`insight-tab-${t.key}`} aria-selected={isActive} aria-controls={`insight-panel-${t.key}`}
+                tabIndex={isActive ? 0 : -1}
+                onKeyDown={event => {
+                  const index = TOPICS.findIndex(topic => topic.key === t.key);
+                  const next = event.key === 'ArrowRight' ? (index + 1) % TOPICS.length : event.key === 'ArrowLeft' ? (index + TOPICS.length - 1) % TOPICS.length : event.key === 'Home' ? 0 : event.key === 'End' ? TOPICS.length - 1 : -1;
+                  if (next >= 0) { event.preventDefault(); document.getElementById(`insight-tab-${TOPICS[next].key}`)?.focus(); }
+                }}
+                className="insight-topic font-medium rounded-lg transition-all duration-150"
                 style={{
                   background: isActive ? 'rgba(212,168,67,0.12)' : 'transparent',
                   border: `1px solid ${isActive ? 'rgba(212,168,67,0.3)' : 'var(--t-border)'}`,
                   color: isActive ? 'var(--t-gold)' : 'var(--t-faint)',
                 }}
               >
-                {t.label}
+                <Icon size={20} aria-hidden="true" /><span>{t.label}</span>
               </button>
             );
           })}
         </div>
+        <div className="insight-mode-row"><span>阅读方式</span><ReadingModeSwitch value={readingMode} onChange={handleModeClick} /></div>
       </div>
 
+      {loading && (
+        <div role="status" className="flex items-center justify-between px-3 py-2 text-[11px]" style={{ color: 'var(--t-gold)' }}>
+          <span>{status}</span>
+          <button type="button" onClick={() => stopCurrent()} className="rounded px-2 py-1" style={{ border: '1px solid var(--t-border)' }}>停止</button>
+        </div>
+      )}
+
       {/* ── Messages ── */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+      <div key={viewKey} data-reading-mode={readingMode} ref={reader.ref} onScroll={reader.onScroll} role="tabpanel" tabIndex={0} id={`insight-panel-${activeTopic}`} aria-labelledby={`insight-tab-${activeTopic}`} className="insight-messages flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+        {readingMode==='plain'&&<p className="reading-style-note">用日常语言解释本主题；已有专业内容会作为参考，生活例子仅帮助理解。</p>}
+
+        {['interrupted', 'stopped', 'error'].includes(phase) && (
+          <p role="status" className="interrupted-notice">{phase === 'stopped' ? '已停止生成' : phase === 'error' ? '上次解读遇到错误' : '上次解读未完成'}，已保留收到的内容。你可以继续提问或重新生成。</p>
+        )}
+        {!loading && ['interrupted', 'stopped', 'error'].includes(phase) && <button type="button" className="small-button" onClick={() => void sendMessage(promptFor(activeTopic,readingMode), true)}>重新生成{topicLabel}解读</button>}
 
         {/* Loading state before first message */}
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="text-4xl mb-3" style={{ color: 'var(--t-gold)', opacity: 0.1 }}>✦</div>
-            <p className="text-[10px] animate-pulse" style={{ color: 'var(--t-faint)' }}>命格解读生成中…</p>
+            <p className="text-[10px]" style={{ color: 'var(--t-faint)' }}>{loading ? `${topicLabel}解读生成中…` : `选择${topicLabel}主题或输入问题开始解读。`}</p>
           </div>
         )}
 
@@ -423,9 +450,10 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
                   style={{ color: 'var(--t-faint)' }}
                 >
                   <span style={{ color: 'var(--t-gold)', opacity: 0.4 }}>✦</span>
-                  命理解读
+                  Codex · {readingMode==='plain'?'通俗解读':'专业解读'}
                 </div>
-                <AiContent text={msg.content} streaming={loading && isLastMsg} />
+                {i===firstAnswer&&<ReadingGuide chart={chart} topic={activeTopic} />}
+                <ReadingText text={msg.content} streaming={loading && isLastMsg} />
               </motion.div>
             );
           })}
@@ -433,16 +461,17 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
       </div>
 
       {/* ── Input ── */}
-      <div className="flex-shrink-0 px-3 pb-3 pt-2" style={{ borderTop: '1px solid var(--t-border)' }}>
+      {reader.hasNew && <button type="button" className="new-content-button" onClick={reader.jump}><ArrowDown size={16} aria-hidden="true" />有新内容，回到底部</button>}
+      <div className="insight-composer flex-shrink-0 px-3 pb-3 pt-2" style={{ borderTop: '1px solid var(--t-border)' }}>
         <div className="flex gap-2">
-          <input
-            type="text"
+          <textarea
+            rows={1}
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            placeholder="继续追问，如：今年适合换工作吗？"
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSend(); } }}
+            aria-label={`${topicLabel}追问`} placeholder={`继续追问${topicLabel}相关问题…`}
             disabled={loading}
-            className="flex-1 rounded-lg px-3 py-2 text-[11px] focus:outline-none transition-colors"
+            className="flex-1 rounded-lg px-3 py-2 focus:outline-none transition-colors"
             style={{
               background: 'var(--t-card)',
               border: '1px solid var(--t-border)',
@@ -452,14 +481,15 @@ ${selectedSiHua.starName}化${selectedSiHua.siHua}落在【${palaceName}】，�
           <button
             onClick={handleSend}
             disabled={loading || !input.trim()}
-            className="px-3 py-2 rounded-lg text-[11px] font-medium transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            className="send-button px-3 py-2 rounded-lg font-medium transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            aria-label="发送追问"
             style={{
               background: 'rgba(212,168,67,0.15)',
               border: '1px solid rgba(212,168,67,0.25)',
               color: 'var(--t-gold)',
             }}
           >
-            {loading ? '…' : '追问'}
+            <Send size={19} aria-hidden="true" />
           </button>
         </div>
       </div>

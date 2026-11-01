@@ -1,5 +1,4 @@
 'use client';
-import { motion } from 'framer-motion';
 import { STEMS, SI_HUA_TABLE } from '@/lib/ziwei/constants';
 import type { ZiweiChart } from '@/lib/ziwei/types';
 
@@ -73,121 +72,19 @@ export default function TimeNav({
 
   const overlayInfo = getOverlayInfo();
 
-  return (
-    <div className="mb-3">
-      {/* Tab 行 */}
-      <div
-        className="flex items-center rounded-xl p-1 gap-1"
-        style={{ background: 'var(--t-surface)', border: '1px solid var(--t-border)' }}
-      >
-        {/* 本命 */}
-        <TabButton
-          active={view === 'mingpan'}
-          onClick={() => onViewChange('mingpan')}
-        >
-          本命
-        </TabButton>
-
-        {/* 大限 */}
-        <TabButton
-          active={view === 'daxian'}
-          onClick={() => onViewChange('daxian')}
-        >
-          {currentDx ? `大限 ${currentDx.startAge}–${currentDx.endAge}` : '大限'}
-        </TabButton>
-
-        {/* 流年 — 含年份切换 */}
-        <div
-          className="relative flex-1 flex items-center justify-center rounded-lg py-1.5 gap-1 transition-all duration-200"
-          style={{
-            background: view === 'liunian'
-              ? 'rgba(212,168,67,0.12)'
-              : 'transparent',
-            border: view === 'liunian'
-              ? '1px solid rgba(212,168,67,0.25)'
-              : '1px solid transparent',
-          }}
-        >
-          <button
-            onClick={() => onViewChange('liunian')}
-            className="text-[10px] font-medium flex-1 text-center"
-            style={{ color: view === 'liunian' ? 'var(--t-gold)' : 'var(--t-faint)' }}
-          >
-            流年
-          </button>
-          {/* 年份 +/- */}
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={e => { e.stopPropagation(); onYearChange(liunianYear - 1); if (view !== 'liunian') onViewChange('liunian'); }}
-              className="text-[9px] w-4 h-4 flex items-center justify-center rounded"
-              style={{ color: 'var(--t-faint)' }}
-            >
-              ‹
-            </button>
-            <span
-              className="text-[10px] font-mono min-w-[28px] text-center cursor-pointer"
-              style={{ color: view === 'liunian' ? 'var(--t-gold)' : 'var(--t-faint)' }}
-              onClick={() => onViewChange('liunian')}
-            >
-              {liunianYear}
-            </span>
-            <button
-              onClick={e => { e.stopPropagation(); onYearChange(liunianYear + 1); if (view !== 'liunian') onViewChange('liunian'); }}
-              className="text-[9px] w-4 h-4 flex items-center justify-center rounded"
-              style={{ color: 'var(--t-faint)' }}
-            >
-              ›
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 叠加四化说明行 */}
-      {overlayInfo && (
-        <motion.div
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2 }}
-          className="flex items-center gap-2 mt-1.5 px-1 flex-wrap"
-        >
-          <span className="text-[9px]" style={{ color: 'var(--t-faint)' }}>
-            {view === 'daxian' ? '大限' : `${liunianYear}`}·{overlayInfo.stemName}年四化：
-          </span>
-          {(['禄', '权', '科', '忌'] as const).map(sh => {
-            const starName = Object.keys(overlayInfo.overlay).find(k => overlayInfo.overlay[k] === sh);
-            if (!starName) return null;
-            return (
-              <span key={sh} className="text-[9px] font-medium" style={{ color: SIHUA_COLORS[sh] }}>
-                {starName}化{sh}
-              </span>
-            );
-          })}
-        </motion.div>
-      )}
+  return <div className="time-nav">
+    <div className="segmented" role="group" aria-label="命盘时间视图">
+      <button type="button" aria-pressed={view === 'mingpan'} onClick={() => onViewChange('mingpan')}>本命</button>
+      <button type="button" aria-pressed={view === 'daxian'} onClick={() => onViewChange('daxian')}>大限{currentDx ? ' ' + currentDx.startAge + '–' + currentDx.endAge : ''}</button>
+      <button type="button" aria-pressed={view === 'liunian'} onClick={() => onViewChange('liunian')}>流年</button>
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex-1 py-1.5 text-[10px] font-medium rounded-lg transition-all duration-200"
-      style={{
-        background: active ? 'rgba(212,168,67,0.12)' : 'transparent',
-        color: active ? 'var(--t-gold)' : 'var(--t-faint)',
-        border: active ? '1px solid rgba(212,168,67,0.25)' : '1px solid transparent',
-      }}
-    >
-      {children}
-    </button>
-  );
+    {view === 'liunian' && <div className="year-picker">
+      <button type="button" aria-label="上一年" disabled={liunianYear <= 1900} onClick={() => onYearChange(liunianYear - 1)}>‹</button>
+      <select aria-label="流年年份" value={liunianYear} onChange={event => onYearChange(Number(event.target.value))}>{Array.from({ length: 201 }, (_, index) => 1900 + index).map(year => <option key={year} value={year}>{year} 年</option>)}</select>
+      <button type="button" aria-label="下一年" disabled={liunianYear >= 2100} onClick={() => onYearChange(liunianYear + 1)}>›</button>
+    </div>}
+    {overlayInfo && <p className="time-overlay">{view === 'daxian' ? '大限' : liunianYear} · {overlayInfo.stemName}年四化：
+      {(['禄', '权', '科', '忌'] as const).map(siHua => { const star = Object.keys(overlayInfo.overlay).find(key => overlayInfo.overlay[key] === siHua); return star ? <span key={siHua} style={{ color: SIHUA_COLORS[siHua], marginRight: 8 }}>{star}化{siHua}</span> : null; })}
+    </p>}
+  </div>;
 }
